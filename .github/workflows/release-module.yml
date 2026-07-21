@@ -1,0 +1,58 @@
+name: Release Foundry Module
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish module release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate manifest version
+        id: manifest
+        shell: bash
+        run: |
+          MODULE_VERSION=$(node -p "require('./modules/dm-workshop-second-screen/module.json').version")
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          echo "version=$MODULE_VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$MODULE_VERSION" >> "$GITHUB_OUTPUT"
+          if [ "${GITHUB_REF_TYPE}" = "tag" ] && [ "$MODULE_VERSION" != "$TAG_VERSION" ]; then
+            echo "module.json version ($MODULE_VERSION) does not match tag ($TAG_VERSION)"
+            exit 1
+          fi
+
+      - name: Build module zip
+        shell: bash
+        run: |
+          cd modules/dm-workshop-second-screen
+          zip -r ../../module.zip module.json README.md CHANGELOG.md LICENSE scripts styles lang
+          cp module.json ../../module.json
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.manifest.outputs.tag }}
+          name: "DM Workshop: Second Screen ${{ steps.manifest.outputs.tag }}"
+          draft: false
+          prerelease: true
+          body: |
+            ALPHA RELEASE
+
+            DM Workshop: Second Screen is currently in active alpha development. Expect bugs, changing features, and incomplete functionality.
+
+            Install in Foundry VTT using this manifest URL:
+
+            https://github.com/formspire/DM-Workshop-Apps-Modules/releases/download/${{ steps.manifest.outputs.tag }}/module.json
+          files: |
+            module.zip
+            module.json

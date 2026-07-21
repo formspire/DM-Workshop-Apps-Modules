@@ -1,0 +1,37 @@
+{
+  "id": "dm-workshop-second-screen",
+  "title": "DM Workshop: Second Screen",
+  "description": "ALPHA: Open a clean same-session tabletop display on a selected monitor with simulated player token vision and camera following for in-person Foundry VTT games.",
+  "version": "0.3.0-alpha.1",
+  "authors": [
+    {
+      "name": "DM Workshop",
+      "url": "https://www.dm-workshop.com"
+    }
+  ],
+  "compatibility": {
+    "minimum": "13",
+    "verified": "13"
+  },
+  "esmodules": [
+    "scripts/second-screen.js"
+  ],
+  "styles": [
+    "styles/second-screen.css"
+  ],
+  "languages": [
+    {
+      "lang": "en",
+      "name": "English",
+      "path": "lang/en.json"
+    }
+  ],
+  "socket": false,
+  "license": "LICENSE",
+  "readme": "README.md",
+  "changelog": "CHANGELOG.md",
+  "url": "https://github.com/formspire/DM-Workshop-Apps-Modules",
+  "manifest": "https://github.com/formspire/DM-Workshop-Apps-Modules/releases/download/v0.3.0-alpha.1/module.json",
+  "download": "https://github.com/formspire/DM-Workshop-Apps-Modules/releases/download/v0.3.0-alpha.1/module.zip",
+  "bugs": "https://github.com/formspire/DM-Workshop-Apps-Modules/issues"
+}

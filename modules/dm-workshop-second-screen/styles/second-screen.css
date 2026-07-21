@@ -1,0 +1,117 @@
+.dmw-launcher,
+.dmw-warning {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.dmw-launcher .dmw-intro,
+.dmw-launcher .notes,
+.dmw-warning p {
+  margin: 0;
+}
+
+.dmw-launcher .form-group {
+  display: grid;
+  grid-template-columns: minmax(130px, 0.8fr) minmax(250px, 1.6fr);
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.dmw-launcher select {
+  width: 100%;
+}
+
+.dmw-launcher .checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.dmw-launcher .notes {
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--color-border-light-primary, #777);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--color-bg-option, #222) 88%, transparent);
+  font-size: 0.9rem;
+}
+
+html.dmw-display-requested,
+html.dmw-secondary-screen,
+html.dmw-display-requested body,
+html.dmw-secondary-screen body,
+body.dmw-secondary-screen {
+  overflow: hidden !important;
+  background: #000 !important;
+}
+
+html.dmw-display-requested body > :not(#board):not(#tooltip):not(#notifications),
+html.dmw-secondary-screen body > :not(#board),
+body.dmw-secondary-screen > :not(#board) {
+  display: none !important;
+}
+
+html.dmw-display-requested #ui-left,
+html.dmw-display-requested #ui-middle,
+html.dmw-display-requested #ui-right,
+html.dmw-display-requested #ui-top,
+html.dmw-display-requested #ui-bottom,
+html.dmw-display-requested #navigation,
+html.dmw-display-requested #controls,
+html.dmw-display-requested #players,
+html.dmw-display-requested #sidebar,
+html.dmw-display-requested #hotbar,
+html.dmw-display-requested #pause,
+html.dmw-display-requested #logo,
+html.dmw-display-requested #fps,
+html.dmw-display-requested .application,
+html.dmw-secondary-screen #ui-left,
+html.dmw-secondary-screen #ui-middle,
+html.dmw-secondary-screen #ui-right,
+html.dmw-secondary-screen #ui-top,
+html.dmw-secondary-screen #ui-bottom,
+html.dmw-secondary-screen #navigation,
+html.dmw-secondary-screen #controls,
+html.dmw-secondary-screen #players,
+html.dmw-secondary-screen #sidebar,
+html.dmw-secondary-screen #hotbar,
+html.dmw-secondary-screen #pause,
+html.dmw-secondary-screen #logo,
+html.dmw-secondary-screen #fps,
+html.dmw-secondary-screen #notifications,
+html.dmw-secondary-screen #tooltip,
+html.dmw-secondary-screen .application,
+body.dmw-secondary-screen #ui-left,
+body.dmw-secondary-screen #ui-middle,
+body.dmw-secondary-screen #ui-right,
+body.dmw-secondary-screen #ui-top,
+body.dmw-secondary-screen #ui-bottom,
+body.dmw-secondary-screen #navigation,
+body.dmw-secondary-screen #controls,
+body.dmw-secondary-screen #players,
+body.dmw-secondary-screen #sidebar,
+body.dmw-secondary-screen #hotbar,
+body.dmw-secondary-screen #pause,
+body.dmw-secondary-screen #logo,
+body.dmw-secondary-screen #fps,
+body.dmw-secondary-screen #notifications,
+body.dmw-secondary-screen #tooltip,
+body.dmw-secondary-screen .application {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+html.dmw-secondary-screen #board,
+body.dmw-secondary-screen #board {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  margin: 0 !important;
+}
+
+body.dmw-secondary-screen.dmw-display-locked #board {
+  pointer-events: none !important;
+  cursor: none !important;
+}
