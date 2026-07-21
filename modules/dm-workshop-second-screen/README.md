@@ -51,7 +51,7 @@ Install the module using Foundry VTT's Manifest URL option.
 Manifest URL:
 
 ```text
-https://github.com/formspire/DM-Workshop-Apps-Modules/releases/download/v0.3.0-alpha.1/module.json
+https://github.com/formspire/DM-Workshop-Apps-Modules/releases/download/v0.3.0-alpha.2/module.json
 ```
 
 1. Open Foundry VTT.

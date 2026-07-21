@@ -233,8 +233,13 @@ async function openLauncherDialog() {
           followToken: form.followToken.checked
         };
 
-        // Call during the actual button gesture so popup and fullscreen permissions have the best chance to succeed.
-        void openDisplayWindow(options);
+        const displayTarget = getDisplayTarget(options);
+
+        // Open the blank display immediately from the button gesture. The Foundry
+        // view is loaded after validation so browser popup blockers keep the click.
+        const hostWindow = openBlankDisplayWindow(displayTarget);
+
+        void openDisplayWindow(options, { hostWindow, ...displayTarget });
         void rememberLauncherOptions(options);
         return options;
       }
@@ -253,9 +258,10 @@ async function rememberLauncherOptions(options) {
   ]);
 }
 
-async function openDisplayWindow(options = {}) {
+async function openDisplayWindow(options = {}, displayTarget = {}) {
   const targetUser = game.users.get(options.targetUserId);
   if (!targetUser) {
+    closePreparedWindow(displayTarget.hostWindow);
     ui.notifications.error("The selected player user could not be found.");
     return null;
   }
@@ -265,25 +271,47 @@ async function openDisplayWindow(options = {}) {
     const detail = options.viewMode === "owned"
       ? `${targetUser.name} does not own any visible tokens on the current scene.`
       : `${targetUser.name} has no visible assigned-character token on the current scene.`;
+    closePreparedWindow(displayTarget.hostWindow);
     ui.notifications.warn(detail);
     return null;
   }
 
+  const target = displayTarget.screen ? displayTarget : getDisplayTarget(options);
+  const { screen, bounds } = target;
+  const displayUrl = buildDisplayUrl(targetUser, options);
+  const hostWindow = displayTarget.hostWindow;
+
+  if (!hostWindow) {
+    ui.notifications.warn("The second-screen window was blocked. Use the manual open prompt, or allow popups for your Foundry address.");
+    await showManualOpenDialog(displayUrl, { targetUserName: targetUser.name, screenLabel: screen.label });
+    return null;
+  }
+
+  try {
+    hostWindow.moveTo(bounds.left, bounds.top);
+    hostWindow.resizeTo(bounds.width, bounds.height);
+  } catch (_error) {
+    // Some browsers restrict window placement even after permission is granted.
+  }
+
+  installDisplayShell(hostWindow, displayUrl, {
+    fullscreen: options.fullscreen !== false,
+    bounds,
+    targetUserName: targetUser.name,
+    screenLabel: screen.label
+  });
+
+  try { hostWindow.focus(); } catch (_error) { /* Browser may deny focus. */ }
+  ui.notifications.info(`Opening ${targetUser.name}'s tabletop view on ${screen.label}.`);
+  return hostWindow;
+}
+
+function getDisplayTarget(options = {}) {
   const screen = state.screens.find(item => item.key === options.screenKey)
     ?? state.screens.find(item => !item.isPrimary)
     ?? state.screens[0]
     ?? currentScreenFallback();
   const bounds = screenBounds(screen);
-
-  const url = new URL(window.location.href);
-  url.searchParams.set(PARAM_DISPLAY, "1");
-  url.searchParams.set(PARAM_TARGET_USER, targetUser.id);
-  url.searchParams.set(PARAM_VIEW_MODE, options.viewMode || "character");
-  url.searchParams.set(PARAM_LOCK, options.lockInteraction === false ? "0" : "1");
-  url.searchParams.set(PARAM_FOLLOW, options.followToken === false ? "0" : "1");
-  url.searchParams.set(PARAM_FOG, options.fogMode === "gm" ? "gm" : "current");
-  url.searchParams.set(PARAM_SMOOTHING, normalizeSmoothing(options.smoothing));
-
   const features = [
     "popup=yes",
     `left=${Math.round(bounds.left)}`,
@@ -302,32 +330,49 @@ async function openDisplayWindow(options = {}) {
     "backgroundColor=#000000"
   ].join(",");
 
-  // A blank host window lets us place the Foundry player view inside a clean shell.
-  // Electron understands several extra feature flags above; browsers safely ignore them.
-  const hostWindow = window.open("about:blank", DISPLAY_WINDOW_NAME, features);
+  return { screen, bounds, features };
+}
 
-  if (!hostWindow) {
-    ui.notifications.warn("The second-screen window was blocked. Allow popups for your Foundry address and try again.");
+function openBlankDisplayWindow(displayTarget) {
+  try {
+    return window.open("about:blank", DISPLAY_WINDOW_NAME, displayTarget.features);
+  } catch (_error) {
     return null;
   }
+}
 
-  try {
-    hostWindow.moveTo(bounds.left, bounds.top);
-    hostWindow.resizeTo(bounds.width, bounds.height);
-  } catch (_error) {
-    // Some browsers restrict window placement even after permission is granted.
-  }
+function buildDisplayUrl(targetUser, options = {}) {
+  const url = new URL(window.location.href);
+  url.searchParams.set(PARAM_DISPLAY, "1");
+  url.searchParams.set(PARAM_TARGET_USER, targetUser.id);
+  url.searchParams.set(PARAM_VIEW_MODE, options.viewMode || "character");
+  url.searchParams.set(PARAM_LOCK, options.lockInteraction === false ? "0" : "1");
+  url.searchParams.set(PARAM_FOLLOW, options.followToken === false ? "0" : "1");
+  url.searchParams.set(PARAM_FOG, options.fogMode === "gm" ? "gm" : "current");
+  url.searchParams.set(PARAM_SMOOTHING, normalizeSmoothing(options.smoothing));
+  return url.toString();
+}
 
-  installDisplayShell(hostWindow, url.toString(), {
-    fullscreen: options.fullscreen !== false,
-    bounds,
-    targetUserName: targetUser.name,
-    screenLabel: screen.label
+async function showManualOpenDialog(displayUrl, options) {
+  const content = `
+    <div class="dmw-warning">
+      <p>Your browser blocked the automatic second-screen window.</p>
+      <p>Use the button below to open ${escapeHtml(options.targetUserName)}'s tabletop view, then move it to ${escapeHtml(options.screenLabel)} if needed.</p>
+      <p><a class="button" target="${DISPLAY_WINDOW_NAME}" href="${escapeHtml(displayUrl)}"><i class="fa-solid fa-up-right-from-square"></i> Open Second Screen</a></p>
+    </div>`;
+
+  await foundry.applications.api.DialogV2.prompt({
+    window: { title: "Open Second Screen Manually" },
+    content,
+    ok: { label: "Close" },
+    rejectClose: false,
+    modal: true
   });
+}
 
-  try { hostWindow.focus(); } catch (_error) { /* Browser may deny focus. */ }
-  ui.notifications.info(`Opening ${targetUser.name}'s tabletop view on ${screen.label}.`);
-  return hostWindow;
+function closePreparedWindow(hostWindow) {
+  if (!hostWindow) return;
+  try { hostWindow.close(); } catch (_error) { /* Browser may deny closing it. */ }
 }
 
 function installDisplayShell(hostWindow, displayUrl, options) {
