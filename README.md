@@ -1,3 +1,4 @@
+DOWNLOAD FOR FOUNDRY COPY/Paste - https://github.com/formspire/DM-Workshop-Apps-Modules/releases/download/v0.3.0-alpha.1/module.json
 # DM Workshop Apps and Modules
 
 This repository contains public DM Workshop applications and Foundry VTT modules.
