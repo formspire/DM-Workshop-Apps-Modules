@@ -4,6 +4,8 @@
 
 DM Workshop: Second Screen is a Foundry VTT module for in-person tabletop games. It opens a dedicated second display that follows a selected player's view, giving the table a cleaner player-facing screen while the GM keeps their normal controls private.
 
+The alpha also includes a Player View Box the GM can drag and resize over the map. When the box is active, the second display follows that framed area so the GM can control exactly what the table sees.
+
 ## Screenshots
 
 Screenshots will be added during alpha testing.
@@ -37,6 +39,8 @@ Current known limitations include:
 ## Features
 
 - Opens a dedicated player-facing display window.
+- Adds a draggable Player View Box to frame what the table sees.
+- Syncs the Player View Box to the live second display through Foundry.
 - Selects a player view based on an assigned character token or owned tokens.
 - Supports monitor selection where browser or desktop permissions allow it.
 - Requests fullscreen for cleaner in-person table displays.
@@ -51,7 +55,7 @@ Install the module using Foundry VTT's Manifest URL option.
 Manifest URL:
 
 ```text
-https://github.com/formspire/DM-Workshop-Apps-Modules/releases/download/v0.3.0-alpha.2/module.json
+https://github.com/formspire/DM-Workshop-Apps-Modules/releases/download/v0.3.0-alpha.3/module.json
 ```
 
 1. Open Foundry VTT.
@@ -65,11 +69,11 @@ https://github.com/formspire/DM-Workshop-Apps-Modules/releases/download/v0.3.0-a
 
 1. Enter the world as a GM.
 2. Select Token Controls on the left.
-3. Click the monitor button.
+3. Click the Player View Box button to create the draggable frame.
 4. Choose the player vision profile.
-5. Choose the destination monitor.
-6. Choose Smooth, Cinematic, or Instant camera follow.
-7. Click **Open on Selected Monitor**.
+5. Click the Second Screen button to open the clean player display.
+6. Drag or resize the Player View Box to control what appears on the second display.
+7. Close the Player View Box to leave the second display on its current map position.
 
 The browser may ask for permission to manage windows across multiple displays. Granting that permission allows the module to identify and position the display on another screen automatically.
 

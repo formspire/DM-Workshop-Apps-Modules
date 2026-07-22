@@ -27,10 +27,10 @@ const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
 const expected = {
   id: "dm-workshop-second-screen",
   title: "DM Workshop: Second Screen",
-  version: "0.3.0-alpha.2",
+  version: "0.3.0-alpha.3",
   url: "https://github.com/formspire/DM-Workshop-Apps-Modules",
-  manifest: "https://github.com/formspire/DM-Workshop-Apps-Modules/releases/download/v0.3.0-alpha.2/module.json",
-  download: "https://github.com/formspire/DM-Workshop-Apps-Modules/releases/download/v0.3.0-alpha.2/module.zip",
+  manifest: "https://github.com/formspire/DM-Workshop-Apps-Modules/releases/download/v0.3.0-alpha.3/module.json",
+  download: "https://github.com/formspire/DM-Workshop-Apps-Modules/releases/download/v0.3.0-alpha.3/module.zip",
   bugs: "https://github.com/formspire/DM-Workshop-Apps-Modules/issues"
 };
 
@@ -51,7 +51,7 @@ if (!Array.isArray(manifest.styles) || !manifest.styles.includes("styles/second-
 const readme = fs.readFileSync(path.join(moduleDir, "README.md"), "utf8");
 for (const text of [
   "ALPHA RELEASE",
-  "https://github.com/formspire/DM-Workshop-Apps-Modules/releases/download/v0.3.0-alpha.2/module.json",
+  "https://github.com/formspire/DM-Workshop-Apps-Modules/releases/download/v0.3.0-alpha.3/module.json",
   "https://ko-fi.com/dmworkshop",
   "Where imagination meets initiative."
 ]) {
