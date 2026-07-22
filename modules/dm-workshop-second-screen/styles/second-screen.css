@@ -36,6 +36,257 @@
   font-size: 0.9rem;
 }
 
+.dmw-preview {
+  position: fixed;
+  z-index: 100000;
+  left: 5vw;
+  top: 6vh;
+  width: min(1180px, 82vw);
+  height: min(760px, 78vh);
+  min-width: 520px;
+  min-height: 340px;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  overflow: hidden;
+  resize: both;
+  border: 1px solid #6d5f7a;
+  border-radius: 8px;
+  background: transparent;
+  box-shadow: 0 18px 70px rgba(0, 0, 0, 0.28);
+}
+
+.dmw-preview.is-dragging {
+  user-select: none;
+}
+
+.dmw-preview__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 42px;
+  padding: 0.45rem 0.65rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  background: #17121d;
+  color: #f4efe5;
+  cursor: move;
+}
+
+.dmw-preview__title,
+.dmw-preview__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.dmw-preview__title {
+  min-width: 0;
+  font-weight: 700;
+}
+
+.dmw-preview__title span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dmw-preview__actions button,
+.dmw-preview__actions .dmw-preview__button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 30px;
+  padding: 0.3rem 0.55rem;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+  background: #241d2d;
+  color: #f4efe5;
+  cursor: pointer;
+  font: inherit;
+  text-decoration: none;
+}
+
+.dmw-preview__actions button:hover,
+.dmw-preview__actions .dmw-preview__button:hover {
+  border-color: #f2a65a;
+}
+
+.dmw-preview__stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+  outline: 2px solid #18d25f;
+  outline-offset: -2px;
+}
+
+.dmw-preview__stream {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: none;
+  background: transparent;
+}
+
+.dmw-preview__frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #000;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.dmw-preview__status {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  max-width: min(420px, calc(100% - 32px));
+  transform: translate(-50%, -50%);
+  padding: 0.75rem 0.9rem;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 6px;
+  background: rgba(12, 10, 16, 0.88);
+  color: #f4efe5;
+  text-align: center;
+  pointer-events: none;
+}
+
+.dmw-preview__stream[src] + .dmw-preview__frame + .dmw-preview__status {
+  display: none;
+}
+
+.dmw-preview__hint {
+  padding: 0.35rem 0.65rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  background: #0d0b12;
+  color: #cfc7d8;
+  font-size: 0.82rem;
+}
+
+.dmw-second-panel {
+  position: fixed;
+  z-index: 100001;
+  left: 12vw;
+  top: 10vh;
+  width: min(1280px, 76vw);
+  height: min(720px, 72vh);
+  min-width: 520px;
+  min-height: 320px;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  overflow: hidden;
+  resize: both;
+  border: 1px solid #2d2f38;
+  border-radius: 8px;
+  background: #000;
+  box-shadow: 0 20px 80px rgba(0, 0, 0, 0.55);
+}
+
+.dmw-second-panel:fullscreen {
+  width: 100vw;
+  height: 100vh;
+  border: 0;
+  border-radius: 0;
+}
+
+.dmw-second-panel:fullscreen .dmw-second-panel__bar {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.dmw-second-panel__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 42px;
+  padding: 0.45rem 0.65rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  background: #0d0b12;
+  color: #f4efe5;
+  cursor: move;
+}
+
+.dmw-second-panel__title,
+.dmw-second-panel__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.dmw-second-panel__title {
+  min-width: 0;
+  font-weight: 700;
+}
+
+.dmw-second-panel__title span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dmw-second-panel__actions button,
+.dmw-second-panel__actions .dmw-second-panel__button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 30px;
+  padding: 0.3rem 0.55rem;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+  background: #1c1d24;
+  color: #f4efe5;
+  cursor: pointer;
+  font: inherit;
+  text-decoration: none;
+}
+
+.dmw-second-panel__actions button:hover,
+.dmw-second-panel__actions .dmw-second-panel__button:hover {
+  border-color: #f2a65a;
+}
+
+.dmw-second-panel__stage {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+  background: #000;
+}
+
+.dmw-second-panel__stream {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #000;
+}
+
+.dmw-second-panel__status {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  max-width: min(420px, calc(100% - 32px));
+  transform: translate(-50%, -50%);
+  padding: 0.75rem 0.9rem;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 6px;
+  background: rgba(12, 10, 16, 0.88);
+  color: #f4efe5;
+  text-align: center;
+  pointer-events: none;
+}
+
+.dmw-second-panel.is-connected .dmw-second-panel__status {
+  display: none;
+}
+
 html.dmw-display-requested,
 html.dmw-secondary-screen,
 html.dmw-display-requested body,
@@ -65,6 +316,9 @@ html.dmw-display-requested #pause,
 html.dmw-display-requested #logo,
 html.dmw-display-requested #fps,
 html.dmw-display-requested .application,
+html.dmw-display-requested .window-app,
+html.dmw-display-requested .app,
+html.dmw-display-requested #interface > :not(#board),
 html.dmw-secondary-screen #ui-left,
 html.dmw-secondary-screen #ui-middle,
 html.dmw-secondary-screen #ui-right,
@@ -81,6 +335,9 @@ html.dmw-secondary-screen #fps,
 html.dmw-secondary-screen #notifications,
 html.dmw-secondary-screen #tooltip,
 html.dmw-secondary-screen .application,
+html.dmw-secondary-screen .window-app,
+html.dmw-secondary-screen .app,
+html.dmw-secondary-screen #interface > :not(#board),
 body.dmw-secondary-screen #ui-left,
 body.dmw-secondary-screen #ui-middle,
 body.dmw-secondary-screen #ui-right,
@@ -96,7 +353,10 @@ body.dmw-secondary-screen #logo,
 body.dmw-secondary-screen #fps,
 body.dmw-secondary-screen #notifications,
 body.dmw-secondary-screen #tooltip,
-body.dmw-secondary-screen .application {
+body.dmw-secondary-screen .application,
+body.dmw-secondary-screen .window-app,
+body.dmw-secondary-screen .app,
+body.dmw-secondary-screen #interface > :not(#board) {
   display: none !important;
   visibility: hidden !important;
   pointer-events: none !important;

@@ -1,5 +1,6 @@
 const MODULE_ID = "dm-workshop-second-screen";
-const TOOL_NAME = "dmw-second-screen";
+const TOOL_BOX_NAME = "dmw-player-view-box";
+const TOOL_SCREEN_NAME = "dmw-player-second-screen";
 
 const PARAM_DISPLAY = "dmwDisplay";
 const PARAM_TARGET_USER = "dmwTargetUser";
@@ -9,6 +10,12 @@ const PARAM_FOLLOW = "dmwFollow";
 const PARAM_FOG = "dmwFog";
 const PARAM_SMOOTHING = "dmwSmoothing";
 const DISPLAY_WINDOW_NAME = "dm-workshop-second-screen-display";
+const PREVIEW_ID = "dmw-display-preview";
+const SECOND_SCREEN_ID = "dmw-second-screen-panel";
+const DISPLAY_STYLE_ID = "dmw-display-suppression";
+const STREAM_CHANNEL_PREFIX = "dmw-second-screen";
+const STREAM_FRAME_INTERVAL_MS = 67;
+const STREAM_JPEG_QUALITY = 0.86;
 
 const startupUrl = new URL(window.location.href);
 const displayRequested = startupUrl.searchParams.get(PARAM_DISPLAY) === "1";
@@ -59,20 +66,32 @@ Hooks.on("getSceneControlButtons", controls => {
     ?? Object.values(controls).find(control => control?.name === "tokens");
   if (!tokenControls?.tools) return;
 
-  tokenControls.tools[TOOL_NAME] = {
-    name: TOOL_NAME,
-    title: "Open DM Workshop Second Screen",
+  tokenControls.tools[TOOL_BOX_NAME] = {
+    name: TOOL_BOX_NAME,
+    title: "Create DM Workshop Player View Box",
     icon: "fa-solid fa-display",
     order: Object.keys(tokenControls.tools).length,
     button: true,
     visible: true,
-    onChange: () => openLauncherDialog()
+    onChange: () => openQuickPlayerViewDialog("preview")
+  };
+
+  tokenControls.tools[TOOL_SCREEN_NAME] = {
+    name: TOOL_SCREEN_NAME,
+    title: "Open DM Workshop Second Screen",
+    icon: "fa-solid fa-up-right-from-square",
+    order: Object.keys(tokenControls.tools).length + 1,
+    button: true,
+    visible: true,
+    onChange: () => openQuickPlayerViewDialog("second-screen")
   };
 });
 
 Hooks.once("ready", async () => {
   game.modules.get(MODULE_ID).api = {
     openLauncherDialog,
+    openDisplayPreview,
+    openSecondScreen,
     openDisplayWindow,
     enterDisplayMode,
     exitDisplayMode,
@@ -120,6 +139,76 @@ for (const hook of [
 
 Hooks.on("visibilityRefresh", () => state.active && scheduleStrictVisibility());
 Hooks.on("sightRefresh", () => state.active && scheduleStrictVisibility());
+
+async function openQuickPlayerViewDialog(action = "preview") {
+  if (!game.user?.isGM) return;
+
+  const users = game.users
+    .filter(user => !user.isGM)
+    .sort((a, b) => Number(b.active) - Number(a.active) || a.name.localeCompare(b.name));
+
+  if (!users.length) {
+    ui.notifications.warn("Create at least one player user so the module knows which character or owned tokens to use.");
+    return;
+  }
+
+  state.screens = await discoverScreens();
+
+  const defaults = getQuickLaunchOptions();
+  const selectedUser = resolveTargetUser(defaults) ?? users[0];
+  const userOptions = users.map(user => {
+    const character = user.character?.name
+      ? ` - ${escapeHtml(user.character.name)}`
+      : " - no assigned character";
+    const active = user.active ? " - online" : "";
+    return `<option value="${user.id}" ${user.id === selectedUser.id ? "selected" : ""}>${escapeHtml(user.name)}${character}${active}</option>`;
+  }).join("");
+
+  const lastViewMode = defaults.viewMode;
+  const content = `
+    <div class="dmw-launcher dmw-launcher--quick">
+      <p class="dmw-intro">Choose which Foundry player view this display should mirror. The pop-out does not need a separate login.</p>
+
+      <div class="form-group">
+        <label for="dmw-quick-user">Player view</label>
+        <select id="dmw-quick-user" name="userId">${userOptions}</select>
+      </div>
+
+      <div class="form-group">
+        <label for="dmw-quick-view-mode">Vision source</label>
+        <select id="dmw-quick-view-mode" name="viewMode">
+          <option value="character" ${lastViewMode === "character" ? "selected" : ""}>Assigned character token</option>
+          <option value="owned" ${lastViewMode === "owned" ? "selected" : ""}>All tokens that player owns</option>
+        </select>
+      </div>
+    </div>`;
+
+  const label = action === "second-screen" ? "Open Second Screen" : "Create Player View Box";
+  const icon = action === "second-screen" ? "fa-solid fa-up-right-from-square" : "fa-solid fa-display";
+
+  await foundry.applications.api.DialogV2.input({
+    window: { title: "Choose Player View" },
+    content,
+    ok: {
+      label,
+      icon,
+      callback: (_event, button) => {
+        const form = button.form.elements;
+        const options = {
+          ...defaults,
+          targetUserId: form.userId.value,
+          viewMode: form.viewMode.value
+        };
+
+        void rememberLauncherOptions(options);
+        if (action === "second-screen") return openSecondScreen(options);
+        return openDisplayPreview(options);
+      }
+    },
+    rejectClose: false,
+    modal: true
+  });
+}
 
 async function openLauncherDialog() {
   if (!game.user?.isGM) return;
@@ -211,14 +300,14 @@ async function openLauncherDialog() {
         Keep the assigned character token centered
       </label>
 
-      <p class="notes"><strong>Best result:</strong> launch the GM view through the Foundry desktop application. A normal web browser may keep a small amount of browser chrome until fullscreen permission is granted.</p>
+      <p class="notes"><strong>Pop Out note:</strong> the Foundry desktop app can use the in-game Player View Box, but true separate windows work best from a regular browser at your Foundry address.</p>
     </div>`;
 
   await foundry.applications.api.DialogV2.input({
     window: { title: "DM Workshop Second Screen" },
     content,
     ok: {
-      label: "Open on Selected Monitor",
+      label: "Open Table Preview",
       icon: "fa-solid fa-display",
       callback: (_event, button) => {
         const form = button.form.elements;
@@ -233,13 +322,7 @@ async function openLauncherDialog() {
           followToken: form.followToken.checked
         };
 
-        const displayTarget = getDisplayTarget(options);
-
-        // Open the blank display immediately from the button gesture. The Foundry
-        // view is loaded after validation so browser popup blockers keep the click.
-        const hostWindow = openBlankDisplayWindow(displayTarget);
-
-        void openDisplayWindow(options, { hostWindow, ...displayTarget });
+        void openDisplayPreview(options);
         void rememberLauncherOptions(options);
         return options;
       }
@@ -258,34 +341,433 @@ async function rememberLauncherOptions(options) {
   ]);
 }
 
-async function openDisplayWindow(options = {}, displayTarget = {}) {
-  const targetUser = game.users.get(options.targetUserId);
-  if (!targetUser) {
-    closePreparedWindow(displayTarget.hostWindow);
-    ui.notifications.error("The selected player user could not be found.");
+async function openDisplayPreview(options = {}) {
+  const prepared = prepareDisplayLaunch(options);
+  if (!prepared) return null;
+
+  return createDisplayPreview(prepared, options);
+}
+
+function openSecondScreen(options = {}) {
+  const prepared = prepareDisplayLaunch(options);
+  if (!prepared) return null;
+
+  const previewResult = createDisplayPreview(prepared, options);
+  createSecondScreenPanel(prepared, options);
+  return previewResult;
+}
+
+function createSecondScreenPanel(prepared, options = {}) {
+  document.getElementById(SECOND_SCREEN_ID)?.remove();
+
+  const panel = document.createElement("section");
+  panel.id = SECOND_SCREEN_ID;
+  panel.className = "dmw-second-panel";
+  panel.innerHTML = `
+    <header class="dmw-second-panel__bar">
+      <div class="dmw-second-panel__title">
+        <i class="fa-solid fa-up-right-from-square"></i>
+        <span>Second Screen</span>
+      </div>
+      <div class="dmw-second-panel__actions">
+        <button type="button" data-action="popout" title="Move this second screen to a separate browser window">
+          <i class="fa-solid fa-window-restore"></i>
+          <span>Pop Out</span>
+        </button>
+        <button type="button" data-action="fullscreen" title="Fullscreen this second screen">
+          <i class="fa-solid fa-expand"></i>
+          <span>Fullscreen</span>
+        </button>
+        <button type="button" data-action="close" title="Close second screen">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+    </header>
+    <div class="dmw-second-panel__stage">
+      <canvas class="dmw-second-panel__stream" aria-label="DM Workshop second screen"></canvas>
+      <div class="dmw-second-panel__status">Waiting for Player View Box stream...</div>
+    </div>`;
+
+  document.body.appendChild(panel);
+  makePanelDraggable(panel, ".dmw-second-panel__bar");
+
+  const stream = panel.querySelector(".dmw-second-panel__stream");
+  const streamContext = stream.getContext("2d");
+  const frameImage = new Image();
+  const status = panel.querySelector(".dmw-second-panel__status");
+  let lastFrameAt = 0;
+  let idleTimer = null;
+  let channel = null;
+
+  const setStatus = message => {
+    if (status) status.textContent = message;
+  };
+
+  if (typeof BroadcastChannel !== "function") {
+    setStatus("This browser cannot mirror the player display stream.");
+  } else if (!streamContext) {
+    setStatus("This browser cannot draw the player display canvas.");
+  } else {
+    channel = new BroadcastChannel(prepared.channelName);
+    channel.addEventListener("message", event => {
+      const message = event.data ?? {};
+      if (message.type === "frame" && message.src) {
+        frameImage.onload = () => {
+          const width = Math.max(1, Number(message.width) || frameImage.naturalWidth || frameImage.width);
+          const height = Math.max(1, Number(message.height) || frameImage.naturalHeight || frameImage.height);
+          if (stream.width !== width) stream.width = width;
+          if (stream.height !== height) stream.height = height;
+          streamContext.drawImage(frameImage, 0, 0, width, height);
+        };
+        frameImage.src = message.src;
+        lastFrameAt = Date.now();
+        panel.classList.add("is-connected");
+        panel.classList.remove("is-idle");
+      } else if (message.type === "closed") {
+        setStatus("The Player View Box was closed.");
+        panel.classList.remove("is-connected");
+        panel.classList.add("is-idle");
+      }
+    });
+    idleTimer = window.setInterval(() => {
+      if (!lastFrameAt || Date.now() - lastFrameAt < 3000) return;
+      setStatus("The Player View Box stream paused.");
+      panel.classList.remove("is-connected");
+      panel.classList.add("is-idle");
+    }, 1000);
+  }
+
+  const cleanup = () => {
+    try { channel?.close(); } catch (_error) { /* Channel may already be closed. */ }
+    if (idleTimer) window.clearInterval(idleTimer);
+    idleTimer = null;
+    panel.remove();
+  };
+  panel._dmwCleanupSecondPanel = cleanup;
+
+  panel.querySelector('[data-action="fullscreen"]').addEventListener("click", () => {
+    void panel.requestFullscreen?.({ navigationUI: "hide" });
+  });
+  panel.querySelector('[data-action="popout"]').addEventListener("click", () => {
+    popOutSecondScreenPanel(panel, prepared, options);
+  });
+  panel.querySelector('[data-action="close"]').addEventListener("click", () => {
+    const ownerWindow = panel.ownerDocument?.defaultView;
+    cleanup();
+    if (ownerWindow && ownerWindow !== window && !ownerWindow.closed) ownerWindow.close();
+  });
+
+  ui.notifications.info("Second Screen panel opened. Use Fullscreen or Pop Out from its header.");
+  return panel;
+}
+
+function popOutSecondScreenPanel(panel, prepared, options = {}) {
+  if (!panel || !panel.isConnected) return null;
+
+  const displayTarget = getDisplayTarget(options);
+  const hostWindow = openBlankDisplayWindow(displayTarget, "about:blank");
+  if (!hostWindow) {
+    ui.notifications.warn("The browser blocked the pop-out window. Use the in-game Second Screen panel or allow popups for Foundry.");
     return null;
   }
 
-  const sourceTokens = findSourceTokens(targetUser, options.viewMode || "character");
+  try {
+    hostWindow.moveTo(displayTarget.bounds.left, displayTarget.bounds.top);
+    hostWindow.resizeTo(displayTarget.bounds.width, displayTarget.bounds.height);
+  } catch (_error) {
+    // Browser window placement is permission-gated.
+  }
+
+  const targetDocument = hostWindow.document;
+  targetDocument.open();
+  targetDocument.write(`<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>DM Workshop Second Screen</title>
+  <style>
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: #000;
+      color: #f4efe5;
+      font-family: Arial, sans-serif;
+    }
+    .dmw-second-panel {
+      position: fixed !important;
+      inset: 0 !important;
+      width: 100vw !important;
+      height: 100vh !important;
+      min-width: 0 !important;
+      min-height: 0 !important;
+      display: grid !important;
+      grid-template-rows: auto 1fr !important;
+      overflow: hidden !important;
+      resize: none !important;
+      border: 0 !important;
+      border-radius: 0 !important;
+      background: #000 !important;
+      box-shadow: none !important;
+    }
+    .dmw-second-panel__bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      min-height: 42px;
+      padding: 0.45rem 0.65rem;
+      border-bottom: 1px solid rgba(255,255,255,0.12);
+      background: #0d0b12;
+      color: #f4efe5;
+      cursor: default;
+      box-sizing: border-box;
+    }
+    .dmw-second-panel__title,
+    .dmw-second-panel__actions {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .dmw-second-panel__title {
+      min-width: 0;
+      font-weight: 700;
+    }
+    .dmw-second-panel__title span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .dmw-second-panel__actions button {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      min-height: 30px;
+      padding: 0.3rem 0.55rem;
+      border: 1px solid rgba(255,255,255,0.18);
+      border-radius: 6px;
+      background: #1c1d24;
+      color: #f4efe5;
+      cursor: pointer;
+      font: inherit;
+    }
+    .dmw-second-panel__actions button:hover {
+      border-color: #f2a65a;
+    }
+    .dmw-second-panel__stage {
+      position: relative;
+      min-height: 0;
+      overflow: hidden;
+      background: #000;
+    }
+    .dmw-second-panel__stream {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      background: #000;
+    }
+    .dmw-second-panel__status {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      max-width: min(420px, calc(100% - 32px));
+      transform: translate(-50%, -50%);
+      padding: 0.75rem 0.9rem;
+      border: 1px solid rgba(255,255,255,0.16);
+      border-radius: 6px;
+      background: rgba(12,10,16,0.88);
+      color: #f4efe5;
+      text-align: center;
+      pointer-events: none;
+    }
+    .dmw-second-panel.is-connected .dmw-second-panel__status {
+      display: none;
+    }
+    .dmw-second-panel:fullscreen .dmw-second-panel__bar {
+      opacity: 0;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body></body>
+</html>`);
+  targetDocument.close();
+  targetDocument.title = `DM Workshop Second Screen - ${prepared.targetUser.name}`;
+
+  const adoptedPanel = targetDocument.adoptNode(panel);
+  adoptedPanel.classList.add("is-popped-out");
+  targetDocument.body.append(adoptedPanel);
+
+  const closePopout = () => adoptedPanel._dmwCleanupSecondPanel?.();
+  hostWindow.addEventListener("beforeunload", closePopout, { once: true });
+  hostWindow.addEventListener("keydown", event => {
+    if (event.shiftKey && event.key === "Escape") hostWindow.close();
+  });
+
+  try { hostWindow.focus(); } catch (_error) { /* Browser may deny focus. */ }
+  ui.notifications.info("Second Screen moved to a pop-out window.");
+  return hostWindow;
+}
+
+function createDisplayPreview(prepared, options = {}) {
+  const { targetUser, sourceTokens, screen, channelName } = prepared;
+  document.getElementById(PREVIEW_ID)?.remove();
+
+  const preview = document.createElement("section");
+  preview.id = PREVIEW_ID;
+  preview.className = "dmw-preview";
+  preview.dataset.channelName = channelName;
+  preview.dataset.displayPageUrl = prepared.displayPageUrl;
+  preview.innerHTML = `
+    <header class="dmw-preview__bar">
+      <div class="dmw-preview__title">
+        <i class="fa-solid fa-display"></i>
+        <span>Player View Box</span>
+      </div>
+      <div class="dmw-preview__actions">
+        <button type="button" data-action="popout" title="Open as a separate window for another monitor">
+          <i class="fa-solid fa-up-right-from-square"></i>
+          <span>Pop Out</span>
+        </button>
+        <a class="dmw-preview__button" href="${escapeHtml(prepared.displayPageUrl)}" target="${DISPLAY_WINDOW_NAME}" title="Open the second screen directly if popups are blocked">
+          <i class="fa-solid fa-link"></i>
+          <span>Second Screen</span>
+        </a>
+        <button type="button" data-action="fullscreen" title="Fullscreen this preview">
+          <i class="fa-solid fa-expand"></i>
+          <span>Fullscreen</span>
+        </button>
+        <button type="button" data-action="close" title="Close preview">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+    </header>
+    <div class="dmw-preview__stage">
+      <img class="dmw-preview__stream" alt="DM Workshop player display">
+      <iframe class="dmw-preview__frame" title="Hidden DM Workshop player renderer" allow="fullscreen" allowfullscreen></iframe>
+      <div class="dmw-preview__status">Starting player renderer...</div>
+    </div>
+    <footer class="dmw-preview__hint">Drag this preview inside Foundry, or use Pop Out and move the new window to ${escapeHtml(screen.label)}.</footer>`;
+
+  document.body.appendChild(preview);
+  makePreviewDraggable(preview);
+
+  const iframe = preview.querySelector(".dmw-preview__frame");
+  const stream = preview.querySelector(".dmw-preview__stream");
+  const status = preview.querySelector(".dmw-preview__status");
+  const cropElement = preview.querySelector(".dmw-preview__stage");
+  const stopStream = startDisplayFramePump({ iframe: null, stream, status, channelName, cropElement });
+  preview._dmwStopStream = stopStream;
+  preview.querySelector('[data-action="popout"]').addEventListener("click", () => {
+    const displayTarget = getDisplayTarget(options);
+    const hostWindow = openBlankDisplayWindow(displayTarget, prepared.displayPageUrl);
+    void openDisplayWindow(options, { hostWindow, prepared, ...displayTarget });
+  });
+  preview.querySelector('[data-action="fullscreen"]').addEventListener("click", () => {
+    void preview.requestFullscreen?.();
+  });
+  preview.querySelector('[data-action="close"]').addEventListener("click", () => {
+    stopStream();
+    preview.remove();
+  });
+
+  ui.notifications.info(`Previewing ${targetUser.name}'s tabletop view. Use Pop Out to move it to another monitor.`);
+  return { preview, sourceTokens };
+}
+
+function getQuickLaunchOptions() {
+  return {
+    targetUserId: game.settings.get(MODULE_ID, "lastUserId") || "",
+    viewMode: game.settings.get(MODULE_ID, "lastViewMode") || "character",
+    screenKey: game.settings.get(MODULE_ID, "lastScreenKey") || "",
+    smoothing: game.settings.get(MODULE_ID, "lastSmoothing") || "smooth",
+    fogMode: "current",
+    fullscreen: true,
+    lockInteraction: true,
+    followToken: true
+  };
+}
+
+function prepareDisplayLaunch(options = {}) {
+  const launchOptions = {
+    ...options,
+    viewMode: options.viewMode || game.settings.get(MODULE_ID, "lastViewMode") || "character"
+  };
+  const targetUser = resolveTargetUser(launchOptions);
+  if (!targetUser) {
+    ui.notifications.error("No player user could be found for the second screen.");
+    return null;
+  }
+
+  const sourceTokens = findSourceTokens(targetUser, launchOptions.viewMode);
   if (!sourceTokens.length) {
-    const detail = options.viewMode === "owned"
+    const detail = launchOptions.viewMode === "owned"
       ? `${targetUser.name} does not own any visible tokens on the current scene.`
       : `${targetUser.name} has no visible assigned-character token on the current scene.`;
-    closePreparedWindow(displayTarget.hostWindow);
     ui.notifications.warn(detail);
     return null;
   }
 
-  const target = displayTarget.screen ? displayTarget : getDisplayTarget(options);
-  const { screen, bounds } = target;
-  const displayUrl = buildDisplayUrl(targetUser, options);
-  const hostWindow = displayTarget.hostWindow;
+  const { screen, bounds } = getDisplayTarget(launchOptions);
+  const displayUrl = buildDisplayUrl(targetUser, launchOptions);
+  const channelName = createStreamChannelName(targetUser);
+  const displayPageUrl = buildDisplayPageUrl(channelName);
+  return { targetUser, sourceTokens, screen, bounds, displayUrl, displayPageUrl, channelName };
+}
 
-  if (!hostWindow) {
-    ui.notifications.warn("The second-screen window was blocked. Use the manual open prompt, or allow popups for your Foundry address.");
-    await showManualOpenDialog(displayUrl, { targetUserName: targetUser.name, screenLabel: screen.label });
+function resolveTargetUser(options = {}) {
+  const users = game.users
+    .filter(user => !user.isGM)
+    .sort((a, b) => Number(b.active) - Number(a.active) || a.name.localeCompare(b.name));
+  if (!users.length) return null;
+
+  const viewMode = options.viewMode || "character";
+  const selected = game.users.get(options.targetUserId);
+  if (selected && !selected.isGM && findSourceTokens(selected, viewMode).length) return selected;
+
+  const savedUserId = game.settings.get(MODULE_ID, "lastUserId");
+  const saved = game.users.get(savedUserId);
+  if (saved && !saved.isGM && findSourceTokens(saved, viewMode).length) return saved;
+
+  return users.find(user => user.active && findSourceTokens(user, viewMode).length)
+    ?? users.find(user => findSourceTokens(user, viewMode).length)
+    ?? users[0];
+}
+
+async function openDisplayWindow(options = {}, displayTarget = {}) {
+  const prepared = displayTarget.prepared ?? prepareDisplayLaunch(options);
+  if (!prepared) {
+    closePreparedWindow(displayTarget.hostWindow);
     return null;
   }
+
+  const { targetUser } = prepared;
+  const target = displayTarget.screen ? displayTarget : getDisplayTarget(options);
+  const hostWindow = displayTarget.hostWindow;
+  const launchPrepared = {
+    ...prepared,
+    screen: target.screen ?? prepared.screen,
+    bounds: target.bounds ?? prepared.bounds
+  };
+
+  if (!hostWindow) {
+    const desktopHint = isFoundryDesktop()
+      ? " Foundry desktop commonly blocks this; open the GM view from a regular browser for true second-window display."
+      : "";
+    ui.notifications.warn(`The second-screen window was blocked.${desktopHint}`);
+    await showManualOpenDialog(launchPrepared);
+    return null;
+  }
+
+  return launchStreamDisplayWindow(hostWindow, options, launchPrepared);
+}
+
+function launchStreamDisplayWindow(hostWindow, launchOptions, prepared) {
+  const { targetUser, screen, bounds } = prepared;
 
   try {
     hostWindow.moveTo(bounds.left, bounds.top);
@@ -294,12 +776,11 @@ async function openDisplayWindow(options = {}, displayTarget = {}) {
     // Some browsers restrict window placement even after permission is granted.
   }
 
-  installDisplayShell(hostWindow, displayUrl, {
-    fullscreen: options.fullscreen !== false,
-    bounds,
-    targetUserName: targetUser.name,
-    screenLabel: screen.label
-  });
+  try {
+    hostWindow.location.replace(prepared.displayPageUrl);
+  } catch (_error) {
+    hostWindow.location.href = prepared.displayPageUrl;
+  }
 
   try { hostWindow.focus(); } catch (_error) { /* Browser may deny focus. */ }
   ui.notifications.info(`Opening ${targetUser.name}'s tabletop view on ${screen.label}.`);
@@ -333,9 +814,9 @@ function getDisplayTarget(options = {}) {
   return { screen, bounds, features };
 }
 
-function openBlankDisplayWindow(displayTarget) {
+function openBlankDisplayWindow(displayTarget, url = "about:blank") {
   try {
-    return window.open("about:blank", DISPLAY_WINDOW_NAME, displayTarget.features);
+    return window.open(url, DISPLAY_WINDOW_NAME, displayTarget.features);
   } catch (_error) {
     return null;
   }
@@ -353,12 +834,31 @@ function buildDisplayUrl(targetUser, options = {}) {
   return url.toString();
 }
 
-async function showManualOpenDialog(displayUrl, options) {
+function buildDisplayPageUrl(channelName) {
+  const route = foundry.utils.getRoute?.(`modules/${MODULE_ID}/display.html`)
+    ?? `/modules/${MODULE_ID}/display.html`;
+  const url = new URL(route, window.location.origin);
+  url.searchParams.set("channel", channelName);
+  return url.toString();
+}
+
+function createStreamChannelName(targetUser) {
+  const worldId = game.world?.id ?? game.world?.title ?? "world";
+  const randomId = foundry.utils.randomID?.(8) ?? Math.random().toString(36).slice(2, 10);
+  return `${STREAM_CHANNEL_PREFIX}-${worldId}-${game.userId}-${targetUser.id}-${Date.now()}-${randomId}`;
+}
+
+async function showManualOpenDialog(prepared) {
+  const { targetUser, screen, displayPageUrl } = prepared;
+  const desktopHint = isFoundryDesktop()
+    ? "<p>The standalone Foundry desktop app blocks this kind of pop-out. For a true second screen, open this world from Chrome or Edge at your Foundry address, then use Pop Out there.</p>"
+    : "";
   const content = `
     <div class="dmw-warning">
       <p>Your browser blocked the automatic second-screen window.</p>
-      <p>Use the button below to open ${escapeHtml(options.targetUserName)}'s tabletop view, then move it to ${escapeHtml(options.screenLabel)} if needed.</p>
-      <p><a class="button" target="${DISPLAY_WINDOW_NAME}" href="${escapeHtml(displayUrl)}"><i class="fa-solid fa-up-right-from-square"></i> Open Second Screen</a></p>
+      <p>Use the button below to open ${escapeHtml(targetUser.name)}'s tabletop view as a clean stream window, then move it to ${escapeHtml(screen.label)} if needed.</p>
+      ${desktopHint}
+      <p><a class="button" target="${DISPLAY_WINDOW_NAME}" href="${escapeHtml(displayPageUrl)}"><i class="fa-solid fa-up-right-from-square"></i> Open Stream Window</a></p>
     </div>`;
 
   await foundry.applications.api.DialogV2.prompt({
@@ -370,12 +870,291 @@ async function showManualOpenDialog(displayUrl, options) {
   });
 }
 
+function isFoundryDesktop() {
+  return /\sElectron\//i.test(navigator.userAgent);
+}
+
 function closePreparedWindow(hostWindow) {
   if (!hostWindow) return;
   try { hostWindow.close(); } catch (_error) { /* Browser may deny closing it. */ }
 }
 
-function installDisplayShell(hostWindow, displayUrl, options) {
+function makePreviewDraggable(preview) {
+  makePanelDraggable(preview, ".dmw-preview__bar");
+}
+
+function makePanelDraggable(preview, handleSelector) {
+  const handle = preview.querySelector(handleSelector);
+  if (!handle) return;
+  let drag = null;
+
+  handle.addEventListener("pointerdown", event => {
+    if (event.target.closest("button, a")) return;
+    const rect = preview.getBoundingClientRect();
+    drag = {
+      pointerId: event.pointerId,
+      offsetX: event.clientX - rect.left,
+      offsetY: event.clientY - rect.top
+    };
+    handle.setPointerCapture(event.pointerId);
+    preview.classList.add("is-dragging");
+  });
+
+  handle.addEventListener("pointermove", event => {
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const x = Math.max(8, Math.min(window.innerWidth - 180, event.clientX - drag.offsetX));
+    const y = Math.max(8, Math.min(window.innerHeight - 90, event.clientY - drag.offsetY));
+    preview.style.left = `${x}px`;
+    preview.style.top = `${y}px`;
+    preview.style.right = "auto";
+    preview.style.bottom = "auto";
+  });
+
+  handle.addEventListener("pointerup", event => {
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    drag = null;
+    preview.classList.remove("is-dragging");
+    try { handle.releasePointerCapture(event.pointerId); } catch (_error) { /* Pointer already released. */ }
+  });
+}
+
+function startDisplayFramePump({
+  iframe = null,
+  stream,
+  status,
+  displayUrl = "",
+  channelName = "",
+  cropElement = null,
+  ownerWindow = window,
+  fallbackWindow = window,
+  fallbackDocument = document,
+  onFrame = null
+}) {
+  let startTimer = null;
+  let frameRequest = null;
+  let lastCapturedAt = 0;
+  let stopped = false;
+  let firstFrame = false;
+  let lastError = "";
+  let loadedAt = 0;
+  let usingFallback = false;
+  let channel = null;
+
+  if (channelName && typeof BroadcastChannel === "function") {
+    channel = new BroadcastChannel(channelName);
+    channel.postMessage({
+      type: "meta",
+      title: "DM Workshop Table View"
+    });
+  }
+
+  const setStatus = message => {
+    if (status) status.textContent = message;
+  };
+
+  const stop = () => {
+    stopped = true;
+    try { channel?.postMessage({ type: "closed" }); } catch (_error) { /* Display may already be closed. */ }
+    try { channel?.close(); } catch (_error) { /* Channel may already be closed. */ }
+    if (startTimer) ownerWindow.clearTimeout(startTimer);
+    if (frameRequest) cancelFrame(ownerWindow, frameRequest);
+    startTimer = null;
+    frameRequest = null;
+    try { if (iframe) iframe.src = "about:blank"; } catch (_error) { /* Window may already be closed. */ }
+  };
+
+  const captureFrame = () => {
+    if (stopped) return;
+
+    try {
+      let renderedCanvas = null;
+
+      if (iframe) {
+        const rendererWindow = iframe.contentWindow;
+        const rendererDocument = iframe.contentDocument;
+        renderedCanvas = extractBoardCanvas(rendererWindow, rendererDocument, { preferDom: Boolean(cropElement) });
+      }
+
+      if (!renderedCanvas) {
+        if (!iframe || (loadedAt && Date.now() - loadedAt > 2500)) {
+          renderedCanvas = extractBoardCanvas(fallbackWindow, fallbackDocument, { preferDom: Boolean(cropElement) });
+          usingFallback = Boolean(renderedCanvas);
+          if (!renderedCanvas) setStatus("Active tabletop canvas not found.");
+        }
+      }
+
+      if (!renderedCanvas) {
+        setStatus("Waiting for Foundry canvas...");
+        return;
+      }
+
+      const outputCanvas = cropElement
+        ? cropCanvasToElement(renderedCanvas, cropElement, fallbackDocument)
+        : renderedCanvas;
+      const frameSrc = outputCanvas.toDataURL("image/jpeg", STREAM_JPEG_QUALITY);
+      stream.src = frameSrc;
+      try {
+        channel?.postMessage({
+          type: "frame",
+          src: frameSrc,
+          width: outputCanvas.width,
+          height: outputCanvas.height,
+          timestamp: Date.now()
+        });
+      } catch (_error) {
+        channel = null;
+      }
+
+      if (!firstFrame) {
+        firstFrame = true;
+        setStatus(usingFallback ? "Live preview connected to the active tabletop canvas." : "Live player display connected.");
+        if (typeof onFrame === "function") onFrame();
+      }
+    } catch (error) {
+      const message = error?.message || String(error);
+      if (message !== lastError) {
+        lastError = message;
+        setStatus(`Display capture blocked: ${message}`);
+      }
+    }
+  };
+
+  const tick = now => {
+    if (stopped) return;
+    if (!lastCapturedAt || now - lastCapturedAt >= STREAM_FRAME_INTERVAL_MS) {
+      lastCapturedAt = now;
+      captureFrame();
+    }
+    frameRequest = requestFrame(ownerWindow, tick);
+  };
+
+  const startLiveLoop = delay => {
+    if (frameRequest || startTimer) return;
+    startTimer = ownerWindow.setTimeout(() => {
+      startTimer = null;
+      if (!stopped) frameRequest = requestFrame(ownerWindow, tick);
+    }, delay);
+  };
+
+  if (iframe && displayUrl) {
+    iframe.addEventListener("load", () => {
+      if (stopped) return;
+      loadedAt = Date.now();
+      setStatus("Renderer loaded. Waiting for board...");
+      startLiveLoop(250);
+    });
+
+    setStatus("Loading player renderer...");
+    iframe.src = displayUrl;
+  } else {
+    loadedAt = Date.now();
+    setStatus("Connecting to live tabletop canvas...");
+    startLiveLoop(50);
+  }
+
+  return stop;
+}
+
+function requestFrame(ownerWindow, callback) {
+  const request = ownerWindow.requestAnimationFrame?.bind(ownerWindow)
+    ?? window.requestAnimationFrame.bind(window);
+  return request(callback);
+}
+
+function cancelFrame(ownerWindow, id) {
+  const cancel = ownerWindow.cancelAnimationFrame?.bind(ownerWindow)
+    ?? window.cancelAnimationFrame.bind(window);
+  cancel(id);
+}
+
+function extractBoardCanvas(rendererWindow, rendererDocument, { preferDom = false } = {}) {
+  if (!rendererWindow || !rendererDocument) return null;
+
+  const foundryCanvas = rendererWindow.canvas;
+  const app = foundryCanvas?.app ?? rendererWindow.game?.canvas?.app;
+  const renderer = app?.renderer;
+  const stage = foundryCanvas?.stage ?? app?.stage;
+
+  if (preferDom) {
+    const domCanvas = findBoardDomCanvas(rendererWindow, rendererDocument, renderer);
+    if (domCanvas) return domCanvas;
+  }
+
+  try {
+    const extract = renderer?.extract ?? renderer?.plugins?.extract;
+    if (extract?.canvas && stage) {
+      return extract.canvas(stage);
+    }
+  } catch (_error) {
+    // Fall through to the DOM canvas below.
+  }
+
+  return findBoardDomCanvas(rendererWindow, rendererDocument, renderer);
+}
+
+function findBoardDomCanvas(rendererWindow, rendererDocument, renderer) {
+  const foundryCanvas = rendererWindow.canvas;
+
+  for (const candidate of [
+    foundryCanvas?.app?.canvas,
+    foundryCanvas?.app?.view,
+    renderer?.canvas,
+    renderer?.view,
+    renderer?.gl?.canvas,
+    renderer?.context?.view,
+    renderer?.context?.canvas
+  ]) {
+    if (isCanvasLike(candidate)) return candidate;
+  }
+
+  const board = rendererDocument.getElementById("board");
+  const canvases = [];
+
+  if (isCanvasLike(board)) canvases.push(board);
+  if (typeof board?.querySelectorAll === "function") canvases.push(...board.querySelectorAll("canvas"));
+  canvases.push(...rendererDocument.querySelectorAll("canvas"));
+
+  return canvases.find(isCanvasLike) ?? null;
+}
+
+function cropCanvasToElement(sourceCanvas, cropElement, ownerDocument = document) {
+  const canvasRect = sourceCanvas.getBoundingClientRect?.();
+  const cropRect = cropElement.getBoundingClientRect?.();
+
+  if (!canvasRect || !cropRect || !canvasRect.width || !canvasRect.height) return sourceCanvas;
+
+  const left = Math.max(canvasRect.left, cropRect.left);
+  const top = Math.max(canvasRect.top, cropRect.top);
+  const right = Math.min(canvasRect.right, cropRect.right);
+  const bottom = Math.min(canvasRect.bottom, cropRect.bottom);
+
+  if (right <= left || bottom <= top) return sourceCanvas;
+
+  const scaleX = sourceCanvas.width / canvasRect.width;
+  const scaleY = sourceCanvas.height / canvasRect.height;
+  const sourceX = Math.max(0, Math.round((left - canvasRect.left) * scaleX));
+  const sourceY = Math.max(0, Math.round((top - canvasRect.top) * scaleY));
+  const sourceWidth = Math.max(1, Math.round((right - left) * scaleX));
+  const sourceHeight = Math.max(1, Math.round((bottom - top) * scaleY));
+
+  const output = ownerDocument.createElement("canvas");
+  output.width = sourceWidth;
+  output.height = sourceHeight;
+  const context = output.getContext("2d");
+  context.drawImage(sourceCanvas, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, sourceWidth, sourceHeight);
+  return output;
+}
+
+function isCanvasLike(candidate) {
+  return Boolean(
+    candidate
+    && typeof candidate.toDataURL === "function"
+    && Number(candidate.width) > 0
+    && Number(candidate.height) > 0
+  );
+}
+
+function installDisplayShell(hostWindow, options) {
   const doc = hostWindow.document;
   doc.open();
   doc.write(`<!doctype html>
@@ -387,7 +1166,8 @@ function installDisplayShell(hostWindow, displayUrl, options) {
   <style>
     html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #000; }
     body { font-family: Arial, sans-serif; }
-    #dmw-frame { position: fixed; inset: 0; width: 100%; height: 100%; border: 0; background: #000; }
+    #dmw-stream { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; }
+    #dmw-frame { position: fixed; inset: 0; width: 100%; height: 100%; border: 0; background: #000; opacity: 0; pointer-events: none; }
     #dmw-shell-overlay { position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; background: #08070d; color: #f4efe5; }
     #dmw-shell-card { width: min(520px, calc(100vw - 40px)); padding: 24px; border: 1px solid #64536f; border-radius: 12px; background: #17121d; text-align: center; box-shadow: 0 18px 60px rgba(0,0,0,.55); }
     #dmw-shell-card h1 { margin: 0 0 8px; font-size: 22px; }
@@ -396,7 +1176,7 @@ function installDisplayShell(hostWindow, displayUrl, options) {
   </style>
 </head>
 <body>
-  <iframe id="dmw-frame" allow="fullscreen" allowfullscreen></iframe>
+  <img id="dmw-stream" alt="DM Workshop player display">
   <div id="dmw-shell-overlay">
     <div id="dmw-shell-card">
       <h1>DM Workshop Table View</h1>
@@ -409,7 +1189,7 @@ function installDisplayShell(hostWindow, displayUrl, options) {
 </html>`);
   doc.close();
 
-  const iframe = doc.getElementById("dmw-frame");
+  const stream = doc.getElementById("dmw-stream");
   const overlay = doc.getElementById("dmw-shell-overlay");
   const status = doc.getElementById("dmw-shell-status");
   const fullscreenButton = doc.getElementById("dmw-fullscreen-button");
@@ -434,17 +1214,23 @@ function installDisplayShell(hostWindow, displayUrl, options) {
     if (event.shiftKey && event.key === "Escape") hostWindow.close();
   });
 
-  iframe.addEventListener("load", () => {
-    window.setTimeout(() => {
+  const stopStream = startDisplayFramePump({
+    iframe: null,
+    stream,
+    status,
+    ownerWindow: hostWindow,
+    fallbackWindow: window,
+    fallbackDocument: document,
+    onFrame: () => {
       overlay.style.opacity = "0";
       overlay.style.pointerEvents = "none";
       overlay.style.transition = "opacity 220ms ease";
-      window.setTimeout(() => overlay.remove(), 240);
-    }, 300);
-  }, { once: true });
+      hostWindow.setTimeout(() => overlay.remove(), 240);
+    }
+  });
+  hostWindow.addEventListener("beforeunload", stopStream, { once: true });
 
   if (options.fullscreen) void requestFullscreen();
-  iframe.src = displayUrl;
 }
 
 async function enterDisplayMode(options = {}) {
@@ -467,10 +1253,13 @@ async function enterDisplayMode(options = {}) {
 
   document.documentElement.classList.remove("dmw-display-requested");
   document.documentElement.classList.add("dmw-secondary-screen");
+  document.documentElement.dataset.dmwDisplay = "active";
   document.body?.classList.add("dmw-secondary-screen");
+  document.body?.setAttribute("data-dmw-display", "active");
   document.body?.classList.toggle("dmw-display-locked", state.options.lockInteraction);
   document.title = `Table View · ${targetUser.name}`;
 
+  applyDisplayChromeSuppression();
   closeOpenApplications();
 
   if (canvas?.ready) await refreshPlayerView({ recenter: true });
@@ -480,6 +1269,8 @@ function exitDisplayMode({ closeWindow = false } = {}) {
   state.active = false;
   clearTimeout(state.refreshTimer);
   stopSmoothFollow();
+  delete document.documentElement.dataset.dmwDisplay;
+  document.body?.removeAttribute("data-dmw-display");
 
   if (closeWindow) {
     if (window.parent && window.parent !== window) {
@@ -840,9 +1631,80 @@ function closeOpenApplications() {
   }
 }
 
+function applyDisplayChromeSuppression() {
+  if (!document.getElementById(DISPLAY_STYLE_ID)) {
+    const style = document.createElement("style");
+    style.id = DISPLAY_STYLE_ID;
+    style.textContent = `
+      html[data-dmw-display="active"],
+      html[data-dmw-display="active"] body {
+        overflow: hidden !important;
+        background: #000 !important;
+      }
+
+      html[data-dmw-display="active"] #interface > :not(#board),
+      html[data-dmw-display="active"] #ui-left,
+      html[data-dmw-display="active"] #ui-middle,
+      html[data-dmw-display="active"] #ui-right,
+      html[data-dmw-display="active"] #ui-top,
+      html[data-dmw-display="active"] #ui-bottom,
+      html[data-dmw-display="active"] #navigation,
+      html[data-dmw-display="active"] #controls,
+      html[data-dmw-display="active"] #players,
+      html[data-dmw-display="active"] #sidebar,
+      html[data-dmw-display="active"] #hotbar,
+      html[data-dmw-display="active"] #pause,
+      html[data-dmw-display="active"] #logo,
+      html[data-dmw-display="active"] #fps,
+      html[data-dmw-display="active"] #notifications,
+      html[data-dmw-display="active"] #tooltip,
+      html[data-dmw-display="active"] .application,
+      html[data-dmw-display="active"] .window-app,
+      html[data-dmw-display="active"] .app,
+      html[data-dmw-display="active"] aside,
+      html[data-dmw-display="active"] nav {
+        display: none !important;
+        visibility: hidden !important;
+        pointer-events: none !important;
+      }
+
+      html[data-dmw-display="active"] #board {
+        position: fixed !important;
+        inset: 0 !important;
+        width: 100vw !important;
+        height: 100vh !important;
+        margin: 0 !important;
+        pointer-events: auto !important;
+      }
+
+      body.dmw-display-locked #board,
+      body.dmw-display-locked canvas {
+        pointer-events: none !important;
+        cursor: none !important;
+      }`;
+    document.head.appendChild(style);
+  }
+
+  const hiddenSelectors = [
+    "#ui-left", "#ui-middle", "#ui-right", "#ui-top", "#ui-bottom",
+    "#navigation", "#controls", "#players", "#sidebar", "#hotbar",
+    "#pause", "#logo", "#fps", "#notifications", "#tooltip",
+    ".application", ".window-app", ".app"
+  ];
+
+  for (const selector of hiddenSelectors) {
+    for (const element of document.querySelectorAll(selector)) {
+      if (element.id === "board") continue;
+      element.setAttribute("aria-hidden", "true");
+    }
+  }
+}
+
 async function showDisplayError(message) {
   document.documentElement.classList.remove("dmw-display-requested", "dmw-secondary-screen");
+  delete document.documentElement.dataset.dmwDisplay;
   document.body?.classList.remove("dmw-secondary-screen", "dmw-display-locked");
+  document.body?.removeAttribute("data-dmw-display");
 
   await foundry.applications.api.DialogV2.prompt({
     window: { title: "Second Screen Could Not Start" },
